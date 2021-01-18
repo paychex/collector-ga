@@ -1,0 +1,35 @@
+{
+    "tags": {
+        "allowUnknownTags": false
+    },
+    "source": {
+        "include": [".", "./README.md"],
+        "includePattern": ".js$",
+        "excludePattern": "(node_modules|coverage|docs)"
+    },
+    "plugins": [
+        "plugins/markdown"
+    ],
+    "opts": {
+        "template": "node_modules/docdash",
+        "encoding": "utf8",
+        "destination": "docs/",
+        "recurse": true,
+        "verbose": true
+    },
+    "templates": {
+        "cleverLinks": false,
+        "monospaceLinks": false
+    },
+    "docdash": {
+        "search": true,
+        "menu": {
+            "Source Code": {
+                "href": "https://github.com/paychex/core",
+                "target": "_blank",
+                "class": "menu-item",
+                "id": "repository"
+            }
+        }
+    }
+}
