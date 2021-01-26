@@ -5,99 +5,84 @@
  */
 
 import get from 'lodash/get.js';
-import set from 'lodash/set.js';
-import wrap from 'lodash/wrap.js';
-import merge from 'lodash/merge.js';
-import reduce from 'lodash/reduce.js';
-import isEmpty from 'lodash/isEmpty.js';
-import mapKeys from 'lodash/mapKeys.js';
-import transform from 'lodash/transform.js';
-import memoize from 'lodash/memoize.js';
-import toLower from 'lodash/toLower.js';
 import isFunction from 'lodash/isFunction.js';
-import isString from 'lodash/isString.js';
-import startsWith from 'lodash/startsWith.js';
-import conforms from 'lodash/conforms.js';
-import conformsTo from 'lodash/conformsTo.js';
 
-import { autoReset, manualReset } from '@paychex/core/signals/index.js';
+import { autoReset } from '@paychex/core/signals/index.js';
 import { error, FATAL, fatal } from '@paychex/core/errors/index.js';
-import { action, process, transitions } from '@paychex/core/process/index.js';
 
-const MAX_HIT_SIZE_KB = 8;
-const MAX_BATCH_SIZE_KB = 16;
+const MAX_SLOTS = 20;
 const MAX_HITS_PER_BATCH = 20;
-const DEFAULT_DEBOUNCE_MS = 10000;
-const DEFAULT_SLOT_INTERVAL_MS = 1000;
+const MAX_HIT_SIZE_KB = 8 << 10;
+const MAX_BATCH_SIZE_KB = 16 << 10;
 
-const DATA_SCHEMA = {
-    fetch: isFunction,
-    createRequest: isFunction,
-    proxy: conforms({ use: isFunction }),
-};
-
-const lowerKey = (_, key) => toLower(key);
-const searchToken = memoize((key) => new RegExp(key, 'ig'));
-
-const operation = {
-    base: 'analytics.google',
+const operation = Object.freeze({
     path: 'batch',
     method: 'POST',
+    protocol: 'https',
+    base: 'www.google-analytics.com',
     headers: {
         'content-type': 'application/x-www-form-urlencoded'
-    }
-};
+    },
+    ignore: {
+        tracking: true,
+        traceability: true,
+    },
+});
 
-function convertToHit(entry) {
-    switch (entry.type) {
-        case 'event':
-            return {
-                hitType: 'event',
-                eventLabel: get(entry, 'label'),
-                eventAction: get(entry, 'data.action'),
-                eventCategory: get(entry, 'data.category'),
-                eventValue: get(entry, 'data.value', get(entry, 'count')),
-            };
-        case 'error':
-            return {
-                hitType: 'exception',
-                exDescription: get(entry, 'label'),
-                exFatal: get(entry, 'data.severity') === FATAL,
-            };
-        case 'timer':
-            return {
-                hitType: 'timing',
-                timingValue: get(entry, 'duration'),
-                timingCategory: get(entry, 'data.category'),
-                // "label" is dominant in our tracking API
-                // but "variable" is dominant in GA's API,
-                // so we pass our "label" as GA's "variable"
-                // and pass our "variable" as GA's "label"
-                timingLabel: get(entry, 'data.variable'),
-                timingVar: get(entry, 'label'),
-            };
-    }
+function asEvent(entry) {
+    if (get(entry, 'type') === 'event')
+        return {
+            hitType: 'event',
+            eventLabel: get(entry, 'label'),
+            eventAction: get(entry, 'data.action'),
+            eventCategory: get(entry, 'data.category'),
+            eventValue: get(entry, 'data.value', get(entry, 'count')),
+        };
 }
 
-function kb(num) {
-    return num << 10;
+function asTimer(entry) {
+    if (get(entry, 'type') === 'timer')
+        return {
+            hitType: 'timing',
+            timingValue: get(entry, 'duration'),
+            timingCategory: get(entry, 'data.category'),
+            // "label" is dominant in our tracking API
+            // but "variable" is dominant in GA's API,
+            // so we pass our "label" as GA's "variable"
+            // and pass our "variable" as GA's "label"
+            timingLabel: get(entry, 'data.variable'),
+            timingVar: get(entry, 'label'),
+        };
+}
+
+function asError(entry) {
+    if (get(entry, 'type') === 'error')
+        return {
+            hitType: 'exception',
+            exDescription: get(entry, 'label'),
+            exFatal: get(entry, 'data.severity') === FATAL,
+        };
+}
+
+function convertToHit(entry) {
+    return asEvent(entry) ||
+        asTimer(entry) ||
+        asError(entry);
 }
 
 function isValidHit(hit) {
-    return !isEmpty(hit) && JSON.stringify(hit).length < kb(MAX_HIT_SIZE_KB);
+    return String(hit).length <= MAX_HIT_SIZE_KB;
 }
 
 function indexBySize(array, size) {
-    let i = 0, bytes = 0;
+    let i = 0,
+        bytes = 0;
     for (; i < array.length; i++) {
-        bytes += JSON.stringify(array[i]).length + 2; // add CRLF
-        if (bytes > size) break;
+        bytes += String(array[i]).length;
+        if (bytes + i > size)
+            break;
     }
     return i;
-}
-
-function hasEntries({ queue }) {
-    return !isEmpty(queue);
 }
 
 /**
@@ -107,218 +92,133 @@ function hasEntries({ queue }) {
  * - maximum hit size: 8kb
  * - maximum batch size: 16kb
  * - max hits per batch: 20
- *
- * You must specify the data layer `fetch`, `createRequest`, and `proxy` to use for calls
- * to GA. Also, you can specify friendly names for values and custom dimensions. See the
- * example for details on both.
- *
  * @function googleAnalytics
+ * @param {function} send Function to call when a batch is ready to send to Google Analytics. Will
+ * be invoked with the batch payload (a string where each line is a form URL-encoded GA hit) as well
+ * as the DataOperation you should pass to the `@paychex/core` `createRequest` method. See the
+ * examples for details.
  * @param {function} ga The Google Analytics tracker to use when sending hits.
  * @returns {function} A collection function that can be passed to `createTracker` in `@paychex/core`.
- * Has methods to cancel, stop, and flush the collector. See examples.
  * @example
- * import wrap from 'lodash/wrap.js';
- * import cloneDeep from 'lodash/cloneDeep.js';
  * import createTracker from '@paychex/core/tracker/index.js';
  * import googleAnalytics from '@paychex/collector-ga/index.js';
  *
- * import { createRequest, fetch, proxy } from '~/path/to/datalayer.js';
+ * import { createRequest, fetch } from '~/path/to/datalayer.js';
  *
- * const collector = googleAnalytics(ga);
- *
- * // enable calls to GA endpoints
- * collector.setDataPipeline({
- *   fetch,
- *   proxy,
- *   createRequest,
- * });
- *
- * // create a decorator to modify the provided
- * // tracking entry by wrapping the collector
- * function decorate(inner, info) {
- *   const clone = cloneDeep(info);
- *   if (clone.type === 'timer' && clone.duration > 2000)
- *       clone.tags = (clone.tags || []).concat(['perf', 'long-running']);
- *   }
- *   inner(clone);
+ * async function send(payload, operation) {
+ *   // optionally, extend fetch to provide custom logic
+ *   // such as retries, connectivity checks, etc...
+ *   await fetch(createRequest(operation, null, payload));
  * }
  *
- * export const tracker = createTracker(wrap(collector, decorate));
+ * const collector = googleAnalytics(send, ga);
+ * export const tracker = createTracker(collector);
+ * @example
+ * // sending friendly names
  *
- * // you can flush the collector at any time (e.g. before navigating to another page)
- * collector.flush();
+ * import { replacer } from '@paychex/core/tracker/utils.js';
+ * import createTracker from '@paychex/core/tracker/index.js';
+ * import googleAnalytics from '@paychex/collector-ga/index.js';
  *
- * // you can also stop the collector permanently
- * collector.stop();
+ * async function send(payload, operation) { ... }
  *
- * // you can register a map of "named" dimensions to
- * // make tracking code more readable; any data values
- * // that match these friendly names will be converted to
- * // the specified GA dimension
- * collector.addDimensionNames({
- *   "Selected Product": "dimension03",
+ * let collector = googleAnalytics(send, ga);
+ *
+ * collector = replacer(collector, {
+ *   en: 'English',
+ *   es: 'Spanish',
+ *   lang: 'language',
  * });
  *
- * // similarly, you can register a map of "human readable"
- * // names to use when processing labels and data values,
- * // e.g. to convert from a system code to a more friendly
- * // name to use in GA reports
- * collector.addFriendlyNames({
- *   "PROD_A": "Product A",
- *   "LANG_ENGLISH": "English",
- * });
+ * export const tracker = createTracker(collector);
  *
- * // in consumer code:
- * tracker.event('change language', {
- *   'label': 'LANG_ENGLISH', // converted to "English" when sent to GA
- *   'Selected Product': 'PROD_A', // converted to dimension03: "Product A" when sent to GA
- * });
+ * // usage:
+ * tracker.event('set lang', { avail: ['es', 'en'], selected: 'en' });
+ *
+ * `{
+ *   id: '09850c98-8d0e-4520-a61c-9401c750dec6',
+ *   type: 'event',
+ *   label: 'set language',
+ *   start: 1611671260770,
+ *   stop: 1611671260770,
+ *   duration: 0,
+ *   count: 1,
+ *   data: {
+ *     avail: [ 'Spanish', 'English' ],
+ *     selected: 'English'
+ *   }
+ * }`
  */
-export default function googleAnalytics(ga, {
-    // test-only
-    DEBOUNCE_MS = DEFAULT_DEBOUNCE_MS,
-    SLOT_INTERVAL_MS = DEFAULT_SLOT_INTERVAL_MS,
-} = {}) {
+export default function googleAnalytics(send, ga, SLOT_INTERVAL = 1000) {
 
-    let fetch,
-        createRequest,
-        slots = 20,
-        tokens = [];
+    if (!(isFunction(send) && isFunction(ga)))
+        throw error('A `send` function and `ga` tracker instance must be provided.', fatal());
 
-    const dimensions = Object.create(null);
-    const friendlyNames = Object.create(null);
-    const pipeline = manualReset(false);
+    let disposed = false,
+        scheduled = false,
+        slots = MAX_SLOTS;
 
-    async function send() {
-        const payload = this.results.batch;
-        const queue = this.conditions.queue;
+    function increment() {
+        slots = Math.min(MAX_SLOTS, slots + 2);
+    }
+
+    const queue = [];
+    const sending = autoReset(true);
+    const token = setInterval(increment, SLOT_INTERVAL);
+
+    ga('set', 'sendHitTask', function enqueue(data) {
+        const hit = data.get('hitPayload');
+        if (isValidHit(hit)) {
+            queue.push(hit);
+            scheduleSend();
+        }
+    });
+
+    // allows consumers to use buffer(...); collates
+    // all calls within this frame so multiple data
+    // calls aren't invoked unnecessarily
+    function scheduleSend() {
+        if (scheduled)
+            return;
+        scheduled = true;
+        setTimeout(createPayload);
+    }
+
+    async function createPayload() {
+        await sending.ready();
+        scheduled = false;
+        const index = indexBySize(queue, MAX_BATCH_SIZE_KB);
+        const payload = queue.splice(0, Math.min(MAX_HITS_PER_BATCH, index));
         try {
-            const data = payload.join('\n');
-            const request = createRequest(operation, null, data);
-            await fetch(request);
+            await send(payload.join('\n'), operation);
         } catch (e) {
             queue.unshift(...payload);
-            console.error(e);
+            scheduleSend();
         } finally {
             sending.set();
         }
     }
 
-    function batch() {
-        const { queue } = this.conditions;
-        const firstIndex = Math.min(MAX_HITS_PER_BATCH, indexBySize(queue, kb(MAX_BATCH_SIZE_KB)));
-        return queue.splice(0, firstIndex);
-    }
-
-    function init() {
-        tokens = [
-            setInterval(() => debounce.set(), DEBOUNCE_MS),
-            setInterval(() => slots = Math.min(20, slots + 2), SLOT_INTERVAL_MS),
-        ];
-    }
-
-    async function wait() {
-        await pipeline.ready();
-        await sending.ready();
-        await debounce.ready();
-    }
-
-    function iterator(result, value, key) {
-        const dim = get(dimensions, toLower(key), key);
-        if (startsWith(dim, 'dimension'))
-            set(result, dim, value);
-        return result;
-    }
-
-    function dimensionize(data) {
-        return reduce(data, iterator, Object.create(null));
-    }
-
-    function replace([friendlyKey, friendlyValue]) {
-        const rx = searchToken(friendlyKey);
-        this.value = this.value.replace(rx, friendlyValue);
-    }
-
-    function transformer(result, value, key) {
-        if (!isString(value)) {
-            return set(result, key, value);
-        }
-        const output = { value };
-        Object.entries(friendlyNames)
-            .forEach(replace, output)
-        return set(result, key, output.value);
-    }
-
-    function friendlify(hit) {
-        return transform(hit, transformer, Object.create(null));
-    }
-
-    function slot(entry) {
-        if (slots === 0)
-            return setTimeout(slot, SLOT_INTERVAL_MS, entry);
-        slots--;
-        const hit = convertToHit(entry);
-        const withDimensions = merge(hit, dimensionize(entry.data));
-        const withFriendlyNames = friendlify(withDimensions);
-        ga('send', withFriendlyNames);
-    }
-
-    const start = process('google analytics batch reporter', [
-        action('init', init),
-        action('wait', wait),
-        action('batch', batch),
-        action('send', send),
-    ], transitions([
-        ['init', 'wait'],
-        ['wait', 'batch', hasEntries],
-        ['batch', 'send'],
-        ['send', 'wait'],
-    ]));
-
-    const state = {
-        queue: [],
-    };
-
-    const sending = autoReset(true);
-    const debounce = autoReset(true);
-    const machine = start('init');
-
-    function cleanup(inner, ...args) {
-        tokens.forEach(clearInterval);
-        return inner(...args);
-    }
-
     function collect(entry) {
-        if (isValidHit(entry))
-            slot(entry);
+        if (disposed)
+            return;
+        if (slots < 1)
+            return setTimeout(collect, SLOT_INTERVAL, entry);
+        const hit = convertToHit(entry);
+        if (!!hit) {
+            slots--;
+            ga('send', hit);
+        }
     }
 
-    collect.flush = () => debounce.set();
-    collect.stop = wrap(machine.stop, cleanup);
-    collect.cancel = wrap(machine.cancel, cleanup);
-
-    collect.setDataPipeline = (data) => {
-        if (!conformsTo(data, DATA_SCHEMA))
-            throw error('Please specify an object with `fetch`, `proxy`, and `createRequest` properties.', fatal());
-        fetch = data.fetch;
-        createRequest = data.createRequest;
-        data.proxy.use({
-            protocol: 'https',
-            host: 'www.google-analytics.com',
-            match: {
-                base: 'analytics.google'
-            }
-        });
-        pipeline.set();
-    };
-
-    collect.addFriendlyNames = (map) => merge(friendlyNames, map);
-    collect.addDimensionNames = (map) => merge(dimensions, mapKeys(map, lowerKey));
-
-    ga('set', 'sendHitTask', function enqueue(data) {
-        const hit = data.get('hitPayload');
-        state.queue.push(hit);
-        machine.update(state);
+    // for unit testing only
+    Object.defineProperty(collect, 'dispose', {
+        enumerable: false,
+        configurable: false,
+        value: function dispose() {
+            disposed = true;
+            clearInterval(token);
+        }
     });
 
     return collect;

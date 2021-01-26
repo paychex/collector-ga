@@ -16,45 +16,51 @@ Construct a new GoogleAnalytics collector for use in the `@paychex/core` Tracker
 import createTracker from '@paychex/core/tracker/index.js';
 import googleAnalytics from '@paychex/collector-ga/index.js';
 
-import { createRequest, fetch, proxy } from '~/path/to/datalayer.js';
+import { createRequest, fetch } from '~/path/to/datalayer.js';
 
-const collector = googleAnalytics(ga);
+async function send(payload, operation) {
+  // optionally, extend fetch to provide custom logic
+  // such as retries, connectivity checks, etc...
+  await fetch(createRequest(operation, null, payload));
+}
 
-// enable calls to GA endpoints
-collector.setDataPipeline({
-  fetch,
-  proxy,
-  createRequest,
-});
-
+const collector = googleAnalytics(send, ga);
 export const tracker = createTracker(collector);
+```
 
-// you can flush the collector at any time (e.g. before navigating to another page)
-collector.flush();
+You can combine this functionality with other utility methods. For example,
+we can batch calls to Google Analytics to run at most once every 5 seconds,
+and also replace keys and values with parameters Google Analytics expects:
 
-// you can also stop the collector permanently
-collector.stop();
+```js
+// combining with utility methods
 
-// you can register a map of "named" dimensions to
-// make tracking code more readable; any data values
-// that match these friendly names will be converted to
-// the specified GA dimension
-collector.addDimensionNames({
-  "Selected Product": "dimension03",
+import { buffer } from '@paychex/core/index.js';
+import { autoReset } from '@paychex/core/signals/index.js';
+import { replacer } from '@paychex/core/tracker/utils.js';
+import createTracker from '@paychex/core/tracker/index.js';
+import googleAnalytics from '@paychex/collector-ga/index.js';
+
+async function send(payload, operation) { ... }
+
+const signal = autoReset(false);
+
+let collector = googleAnalytics(send, ga);
+
+collector = replacer(collector, {
+    'en': 'English',
+    'es': 'Spanish',
+    'Language': 'dimension12',
 });
 
-// similarly, you can register a map of "human readable"
-// names to use when processing labels and data values,
-// e.g. to convert from a system code to a more friendly
-// name to use in GA reports
-collector.addFriendlyNames({
-  "PROD_A": "Product A",
-  "LANG_ENGLISH": "English",
-});
+collector = buffer(collector, [signal]);
+collector.flush = signal.set;
 
-// in consumer code:
-tracker.event('language changed', {
-  'label': 'LANG_ENGLISH', // converted to "English" when sent to GA
-  'Selected Product': 'PROD_A', // converted to dimension03: "Product A" when sent to GA
-});
+// automatically flush the queue every 5 seconds;
+// consumers can also manually invoke `flush` (e.g.
+// when the user is navigating away from the site)
+
+setInterval(collector.flush, 5000);
+
+export default collector;
 ```

@@ -1,7 +1,5 @@
 import expect from 'expect';
 import { spy } from '@paychex/core/test/utils.js';
-import { FATAL } from '@paychex/core/errors/index.js';
-import { manualReset } from '@paychex/core/signals/index.js';
 
 import googleAnalytics from '../index.js';
 
@@ -12,355 +10,174 @@ describe('collectors', () => {
         timer = {};
 
     beforeEach(() => {
-        event = {
-            type: 'event',
-            label: 'event label',
-            count: 1,
-            data: {
-                action: 'event action',
-                category: 'event category',
-                mode: 'employee', // custom dimension
-                value: 123
-            }
-        };
-        error = {
-            type: 'error',
-            label: 'error message',
-            data: {
-                mode: 'employee',
-                severity: FATAL
-            }
-        };
-        timer = {
-            type: 'timer',
-            label: 'label',
-            duration: 200,
-            data: {
-                mode: 'employee',
-                category: 'category',
-                variable: 'variable'
-            }
-        };
+        event = { type: 'event' };
+        error = { type: 'error' };
+        timer = { type: 'timer' };
     });
 
     describe('googleAnalytics', () => {
 
         let ga,
-            collector,
-            fetch,
-            proxy,
-            createRequest;
+            hit,
+            send,
+            enqueue,
+            collector;
 
-        function setUpSpies() {
-            proxy = { use: spy() };
-            createRequest = spy().returns({});
-            fetch = spy().returns(Promise.resolve({ status: 200 }));
-        }
-
-        function initCollector(props = {}) {
-            setUpSpies();
-            ga = spy();
-            ga.onCall(0).invokes((_, __, enqueue) => {
-                ga.invokes((action, entry) => {
-                    expect(action).toBe('send');
-                    enqueue({ get: () => JSON.stringify(entry) });
-                });
+        beforeEach(() => {
+            send = spy();
+            hit = 'ea=action&el=label&ec=category';
+            ga = spy().invokes((method, ...args) => {
+                if (method === 'set')
+                    enqueue = args.pop();
+                else
+                    enqueue({ get: () => hit });
             });
-            if (collector) {
-                collector.stop();
-            }
-            collector = googleAnalytics(ga, props);
-            collector.setDataPipeline({
-                fetch,
-                proxy,
-                createRequest,
-            });
-        }
+            collector = googleAnalytics(send, ga, 10);
+        });
 
-        beforeEach(initCollector);
-        afterEach(() => collector.stop());
+        afterEach(() => collector.dispose());
 
         it('returns expected function', () => {
             expect(collector).toBeInstanceOf(Function);
-            expect('stop' in collector).toBe(true);
-            expect('cancel' in collector).toBe(true);
         });
 
-        it('throws if fetch not provided', () => {
-            expect(() => collector.setDataPipeline({
-                createRequest,
-                proxy,
-                fetch: undefined,
-            })).toThrowError('Please specify an object with `fetch`, `proxy`, and `createRequest` properties.');
+        it('throws if send not a function', () => {
+            expect(() => googleAnalytics(null, ga)).toThrow();
         });
 
-        it('throws if createRequest not provided', () => {
-            expect(() => collector.setDataPipeline({
-                createRequest: undefined,
-                proxy,
-                fetch,
-            })).toThrowError('Please specify an object with `fetch`, `proxy`, and `createRequest` properties.');
+        it('throws if ga is not a function', () => {
+            expect(() => googleAnalytics(send, null)).toThrow();
         });
 
-        it('throws if proxy not provided', () => {
-            expect(() => collector.setDataPipeline({
-                createRequest,
-                proxy: undefined,
-                fetch,
-            })).toThrowError('Please specify an object with `fetch`, `proxy`, and `createRequest` properties.');
-        });
-
-        it('sends using default decorator', (done) => {
+        it('does nothing if disposed', (done) => {
+            collector.dispose();
             collector(event);
             setTimeout(() => {
-                expect(fetch.called).toBe(true);
+                expect(send.called).toBe(false);
                 done();
             });
         });
 
-        it('does not send invalid hit', (done) => {
-            collector({});
-            setTimeout(() => {
-                expect(fetch.called).toBe(false);
-                done();
-            });
-        });
-
-        it('maps dimensions', (done) => {
-            event.data.custom = 'some value';
-            collector.addDimensionNames({
-                'mode': 'dimension20',
-                'custom': 'dimension100',
-            });
+        it('sends expected payload', (done) => {
             collector(event);
             setTimeout(() => {
-                const hits = createRequest.args[2].split('\n').map(JSON.parse);
-                expect(hits[0]).toMatchObject({
-                    hitType: 'event',
-                    eventLabel: 'event label',
-                    eventAction: 'event action',
-                    eventCategory: 'event category',
-                    eventValue: 123,
-                    dimension20: 'employee',
-                    dimension100: 'some value',
-                });
+                expect(send.args).toEqual([
+                    hit,
+                    expect.objectContaining({
+                        path: 'batch',
+                        method: 'POST',
+                        protocol: 'https',
+                        base: 'www.google-analytics.com',
+                        headers: {
+                            'content-type': 'application/x-www-form-urlencoded',
+                        },
+                    }),
+                ]);
                 done();
             });
         });
 
-        it('uses friendly names', (done) => {
-            collector.addFriendlyNames({
-                'key.1': 'friend 1',
-                'key.2': 'friend 2',
-            });
-            event.label = 'load [key.2]';
-            event.data.dimension100 = 'key.1 and key.2';
+        it('collates all calls within a frame', (done) => {
             collector(event);
-            setTimeout(() => {
-                const hits = createRequest.args[2].split('\n').map(JSON.parse);
-                expect(hits[0]).toMatchObject({
-                    hitType: 'event',
-                    eventLabel: 'load [friend 2]',
-                    eventAction: 'event action',
-                    eventCategory: 'event category',
-                    eventValue: 123,
-                    dimension100: 'friend 1 and friend 2',
-                });
-                done();
-            });
-        });
-
-        it('ignores non-dimension data', (done) => {
-            event.data.custom = 'hello';
-            collector(event);
-            setTimeout(() => {
-                const hits = createRequest.args[2].split('\n').map(JSON.parse);
-                expect('custom' in hits[0]).toBe(false);
-                done();
-            });
-        });
-
-        it('handles exceptions', (done) => {
+            collector(timer);
             collector(error);
             setTimeout(() => {
-                const hits = createRequest.args[2].split('\n').map(JSON.parse);
-                expect(hits[0]).toMatchObject({
-                    hitType: 'exception',
-                    exDescription: 'error message',
-                    exFatal: true,
-                });
+                expect(send.callCount).toBe(1);
+                expect(send.args[0]).toEqual([hit, hit, hit].join('\n'));
                 done();
             });
         });
 
-        it('handles timings', (done) => {
-            collector(timer);
-            setTimeout(() => {
-                const hits = createRequest.args[2].split('\n').map(JSON.parse);
-                expect(hits[0]).toMatchObject({
-                    hitType: 'timing',
-                    timingValue: 200,
-                    timingCategory: 'category',
-                    timingLabel: 'variable',
-                    timingVar: 'label',
-                });
-                done();
-            });
-        });
-
-        it('debounces', (done) => {
-            const MS = 50;
-            initCollector({ DEBOUNCE_MS: MS });
+        it('sends sequentially', (done) => {
+            send.invokes(() => new Promise(resolve => setTimeout(resolve, 50)));
             collector(event);
             setTimeout(() => {
+                expect(send.callCount).toBe(1);
                 collector(event);
-                fetch.reset();
-                fetch.returns(Promise.resolve({ status: 200 }));
                 setTimeout(() => {
-                    expect(fetch.called).toBe(false);
-                });
-            }, MS / 2);
-            setTimeout(() => {
-                expect(fetch.called).toBe(true);
-                done();
-            }, MS + 50);
+                    expect(send.callCount).toBe(2);
+                    done();
+                }, 50);
+            });
         });
 
-        it('waits for previous send to complete', (done) => {
-            const FETCH_MS = 20;
-            fetch.invokes(() => new Promise((resolve) => {
-                setTimeout(resolve, FETCH_MS, { status: 200 });
-            }));
-            initCollector({ DEBOUNCE_MS: 0 });
+        it('re-enqueues hits when send fails', (done) => {
+            send.onCall(0).throws(new Error());
             collector(event);
             setTimeout(() => {
-                expect(fetch.callCount).toBe(1);
-                collector(event);
+                expect(send.callCount).toBe(1);
                 setTimeout(() => {
-                    expect(fetch.callCount).toBe(2);
+                    expect(send.callCount).toBe(2);
+                    expect(send.args[0]).toBe(hit);
+                    done();
                 });
-                setTimeout(() => {
-                    expect(fetch.callCount).toBe(2);
-                    done();
-                }, FETCH_MS + 10);
             });
         });
 
-        it('queues hits after 20 reached', (done) => {
-            let firstHitCount;
-            const DEBOUNCE_MS = 50;
-            const wait = manualReset(false);
-            initCollector({
-                signals: [wait],
-                DEBOUNCE_MS,
-                SLOT_INTERVAL_MS: DEBOUNCE_MS / 5,
-            });
-            Array(30)
-                .fill(event)
-                .forEach(collector);
-            wait.set(); // proceed
+        it('only sends up to 20 hits in a batch', (done) => {
+            send.onCall(0).invokes(() => new Promise(resolve => setTimeout(resolve, 60)));
+            const asHit = () => hit;
+            const batch1 = Array(20).fill(event);
+            const batch2 = Array(10).fill(event);
+            batch1.concat(batch2).forEach(collector);
             setTimeout(() => {
-                const hits = createRequest.args[2].split('\n').map(JSON.parse);
-                expect(fetch.callCount).toBe(1);
-                expect(hits.length).toBe(20);
+                expect(send.args[0]).toEqual(batch1.map(asHit).join('\n'));
                 setTimeout(() => {
-                    const sent = createRequest.args[2].split('\n').map(JSON.parse);
-                    firstHitCount = sent.length;
-                    expect(sent.length).toBeLessThan(10);
-                    expect(fetch.callCount).toBe(2);
-                }, DEBOUNCE_MS);
-                setTimeout(() => {
-                    const sent = createRequest.args[2].split('\n').map(JSON.parse);
-                    expect(fetch.callCount).toBe(3);
-                    expect(sent.length + firstHitCount).toBe(10); // remaining hits
+                    expect(send.callCount).toBe(2);
+                    expect(send.args[0]).toEqual(batch2.map(asHit).join('\n'));
                     done();
-                }, DEBOUNCE_MS * 2 + 10);
+                }, 60);
             });
         });
 
-        it('sends at most 16kb per batch', (done) => {
-            event.label = Array((8 << 10) - 400).fill('-').join('');
-            const entrySize = JSON.stringify(event).length;
-            const wait = manualReset(false);
-            initCollector({ signals: [wait] });
-            Array(5)
-                .fill(event)
-                .forEach(collector);
-            wait.set();
+        it('only sends up to 16kb payload', (done) => {
+            hit = Array(4 << 10).fill(0).join('');
+            Array(5).fill(event).forEach(collector);
             setTimeout(() => {
-                const body = createRequest.args[2];
-                const hits = body.split('\n').map(JSON.parse);
-                expect(body.length).toBeLessThan(16 << 10);
-                expect(entrySize).toBeLessThan(8 << 10);
+                expect(send.args[0].length).toBeLessThan(16 << 10);
+                expect(send.args[0].split('\n').length).toBe(3);
+                done();
+            });
+        });
+
+        it('queues once slots are full', (done) => {
+            Array(30).fill(event).forEach(collector);
+            const payload = Array(20).fill(hit).join('\n');
+            setTimeout(() => {
+                expect(send.args[0]).toEqual(payload);
+                done();
+            });
+        });
+
+        it('ignores hits > 8kb', (done) => {
+            const kb4 = Array(4 << 10).fill(0).join('');
+            const kb8 = Array(8 << 10).fill(0).join('');
+            hit = kb4
+            collector(event);
+            hit = kb8 + '0';
+            collector(event);
+            hit = kb8;
+            collector(event);
+            setTimeout(() => {
+                const hits = send.args[0].split('\n');
                 expect(hits.length).toBe(2);
+                expect(hits).toEqual([kb4, kb8]);
                 done();
             });
         });
 
-        it('excludes hits > 8kb', (done) => {
-            const wait = manualReset(false);
-            initCollector({ signals: [wait] });
-            Array(10)
-                .fill(1)
-                .map((_, index) => {
-                    const copy = Object.assign({}, event);
-                    copy.label = Array((index + 1) << 10).fill('-').join('');
-                    return copy;
-                })
-                .forEach(collector);
-            wait.set();
+        it('ignores invalid TrackingInfo items', (done) => {
+            collector({});
+            collector(event);
+            collector();
+            collector(null);
+            collector(error);
+            collector('abc');
+            collector(timer);
+            collector(123);
             setTimeout(() => {
-                const body = createRequest.args[2];
-                const hits = body.split('\n');
-                expect(hits.length).toBeLessThan(10);
-                hits.forEach(hit =>
-                    expect(hit.length).toBeLessThan(8 << 10));
+                expect(send.args[0].split('\n')).toEqual([hit, hit, hit]);
                 done();
-            });
-        });
-
-        it('outputs send errors to console', (done) => {
-            const orig = console.error;
-            console.error = spy();
-            fetch.returns(Promise.reject({ status: 400 }));
-            collector(event);
-            setTimeout(() => {
-                expect(console.error.called).toBe(true);
-                console.error = orig;
-                done();
-            });
-        });
-
-        it('prepends error batch to next attempt', (done) => {
-            const orig = console.error;
-            console.error = spy();
-            initCollector({ DEBOUNCE_MS: 10 });
-            fetch.onCall(0).returns(Promise.reject({ status: 400 }));
-            collector(event);
-            setTimeout(() => {
-                event.data.value = 321;
-                collector(event);
-                setTimeout(() => {
-                    console.error = orig;
-                    const body = createRequest.args[2];
-                    const hits = body.split('\n').map(JSON.parse);
-                    expect(hits[0].eventValue).toBe(123);
-                    expect(hits[1].eventValue).toBe(321);
-                    done();
-                }, 15);
-            });
-        });
-
-        it('flush() sends batch within debounce period', (done) => {
-            collector(event);
-            setTimeout(() => {
-                expect(fetch.callCount).toBe(1);
-                collector(event);
-                setTimeout(() => {
-                    expect(fetch.callCount).toBe(2);
-                    done();
-                });
-                collector.flush();
             });
         });
 
