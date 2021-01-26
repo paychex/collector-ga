@@ -29,20 +29,34 @@ const operation = Object.freeze({
     },
 });
 
+const rx = /^dimension\d+$/;
+
+function onlyDimensions(map, [key, value]) {
+    if (rx.test(key))
+        map[key] = value;
+    return map;
+}
+
+function withDimensions(object, entry) {
+    const data = get(entry, 'data', {});
+    const dims = Object.entries(data).reduce(onlyDimensions, {});
+    return Object.assign(object, dims);
+}
+
 function asEvent(entry) {
     if (get(entry, 'type') === 'event')
-        return {
+        return withDimensions({
             hitType: 'event',
             eventLabel: get(entry, 'label'),
             eventAction: get(entry, 'data.action'),
             eventCategory: get(entry, 'data.category'),
             eventValue: get(entry, 'data.value', get(entry, 'count')),
-        };
+        }, entry);
 }
 
 function asTimer(entry) {
     if (get(entry, 'type') === 'timer')
-        return {
+        return withDimensions({
             hitType: 'timing',
             timingValue: get(entry, 'duration'),
             timingCategory: get(entry, 'data.category'),
@@ -52,16 +66,16 @@ function asTimer(entry) {
             // and pass our "variable" as GA's "label"
             timingLabel: get(entry, 'data.variable'),
             timingVar: get(entry, 'label'),
-        };
+        }, entry);
 }
 
 function asError(entry) {
     if (get(entry, 'type') === 'error')
-        return {
+        return withDimensions({
             hitType: 'exception',
             exDescription: get(entry, 'label'),
             exFatal: get(entry, 'data.severity') === FATAL,
-        };
+        }, entry);
 }
 
 function convertToHit(entry) {

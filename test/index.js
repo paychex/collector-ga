@@ -88,6 +88,17 @@ describe('collectors', () => {
             });
         });
 
+        it('excludes non-dimension data', (done) => {
+            collector({ type: 'event', data: { key: 'value', dimension12: 'value' }});
+            setTimeout(() => {
+                expect(ga.args[1]).toEqual(expect.objectContaining({
+                    hitType: 'event',
+                    dimension12: 'value'
+                }));
+                done();
+            });
+        });
+
         it('sends sequentially', (done) => {
             send.invokes(() => new Promise(resolve => setTimeout(resolve, 50)));
             collector(event);
