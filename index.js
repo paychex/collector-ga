@@ -130,15 +130,15 @@ function indexBySize(array, size) {
  * @example
  * // sending friendly names
  *
- * import { replacer } from '@paychex/core/tracker/utils.js';
  * import createTracker from '@paychex/core/tracker/index.js';
  * import googleAnalytics from '@paychex/collector-ga/index.js';
+ * import { withReplacement } from '@paychex/core/tracker/utils.js';
  *
  * async function send(payload, operation) { ... }
  *
  * let collector = googleAnalytics(send, ga);
  *
- * collector = replacer(collector, {
+ * collector = withReplacement(collector, {
  *   en: 'English',
  *   es: 'Spanish',
  *   lang: 'language',
