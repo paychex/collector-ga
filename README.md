@@ -37,7 +37,7 @@ and also replace keys and values with parameters Google Analytics expects:
 
 import { buffer } from '@paychex/core/index.js';
 import { autoReset } from '@paychex/core/signals/index.js';
-import { replacer } from '@paychex/core/tracker/utils.js';
+import { withReplacement } from '@paychex/core/tracker/utils.js';
 import createTracker from '@paychex/core/tracker/index.js';
 import googleAnalytics from '@paychex/collector-ga/index.js';
 
@@ -47,11 +47,11 @@ const signal = autoReset(false);
 
 let collector = googleAnalytics(send, ga);
 
-collector = replacer(collector, {
-    'en': 'English',
-    'es': 'Spanish',
-    'Language': 'dimension12',
-});
+collector = withReplacement(collector, new Map([
+  [/\ben\b/i, 'English'],
+  [/\bes\b/i, 'Spanish'],
+  [/^lang$/i, 'language'],
+]));
 
 collector = buffer(collector, [signal]);
 collector.flush = signal.set;

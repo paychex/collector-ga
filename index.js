@@ -138,11 +138,11 @@ function indexBySize(array, size) {
  *
  * let collector = googleAnalytics(send, ga);
  *
- * collector = withReplacement(collector, {
- *   en: 'English',
- *   es: 'Spanish',
- *   lang: 'language',
- * });
+ * collector = withReplacement(collector, new Map([
+ *   [/\ben\b/i, 'English'],
+ *   [/\bes\b/i, 'Spanish'],
+ *   [/\blang\b/i, 'language'],
+ * ]));
  *
  * export const tracker = createTracker(collector);
  *
