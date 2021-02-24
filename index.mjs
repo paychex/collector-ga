@@ -4,11 +4,11 @@
  * @module index
  */
 
-import get from 'lodash/get.js';
-import isFunction from 'lodash/isFunction.js';
+import { get, isFunction } from 'lodash-es';
+import { signals, errors } from '@paychex/core';
 
-import { autoReset } from '@paychex/core/signals/index.js';
-import { error, FATAL, fatal } from '@paychex/core/errors/index.js';
+const { autoReset } = signals;
+const { error, FATAL, fatal } = errors;
 
 const MAX_SLOTS = 20;
 const MAX_HITS_PER_BATCH = 20;
@@ -106,7 +106,8 @@ function indexBySize(array, size) {
  * - maximum hit size: 8kb
  * - maximum batch size: 16kb
  * - max hits per batch: 20
- * @function googleAnalytics
+ *
+ * @function
  * @param {function} send Function to call when a batch is ready to send to Google Analytics. Will
  * be invoked with the batch payload (a string where each line is a form URL-encoded GA hit) as well
  * as the DataOperation you should pass to the `@paychex/core` `createRequest` method. See the
@@ -114,9 +115,6 @@ function indexBySize(array, size) {
  * @param {function} ga The Google Analytics tracker to use when sending hits.
  * @returns {function} A collection function that can be passed to `createTracker` in `@paychex/core`.
  * @example
- * import createTracker from '@paychex/core/tracker/index.js';
- * import googleAnalytics from '@paychex/collector-ga/index.js';
- *
  * import { createRequest, fetch } from '~/path/to/datalayer.js';
  *
  * async function send(payload, operation) {
@@ -126,25 +124,21 @@ function indexBySize(array, size) {
  * }
  *
  * const collector = googleAnalytics(send, ga);
- * export const tracker = createTracker(collector);
+ * export const tracker = trackers.create(collector);
  * @example
  * // sending friendly names
- *
- * import createTracker from '@paychex/core/tracker/index.js';
- * import googleAnalytics from '@paychex/collector-ga/index.js';
- * import { withReplacement } from '@paychex/core/tracker/utils.js';
  *
  * async function send(payload, operation) { ... }
  *
  * let collector = googleAnalytics(send, ga);
  *
- * collector = withReplacement(collector, new Map([
+ * collector = trackers.utils.withReplacement(collector, new Map([
  *   [/\ben\b/i, 'English'],
  *   [/\bes\b/i, 'Spanish'],
  *   [/\blang\b/i, 'language'],
  * ]));
  *
- * export const tracker = createTracker(collector);
+ * export const tracker = trackers.create(collector);
  *
  * // usage:
  * tracker.event('set lang', { avail: ['es', 'en'], selected: 'en' });
@@ -163,7 +157,7 @@ function indexBySize(array, size) {
  *   }
  * }`
  */
-export default function googleAnalytics(send, ga, SLOT_INTERVAL = 1000) {
+export function googleAnalytics(send, ga, SLOT_INTERVAL = 1000) {
 
     if (!(isFunction(send) && isFunction(ga)))
         throw error('A `send` function and `ga` tracker instance must be provided.', fatal());

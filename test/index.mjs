@@ -1,7 +1,7 @@
 import expect from 'expect';
-import { spy } from '@paychex/core/test/utils.js';
+import { spy } from '@paychex/core/test/utils.mjs';
 
-import googleAnalytics from '../index.js';
+import { googleAnalytics } from '../index.mjs';
 
 describe('collectors', () => {
 
