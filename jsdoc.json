@@ -5,7 +5,7 @@
     "source": {
         "include": [".", "./README.md"],
         "includePattern": ".js$",
-        "excludePattern": "(node_modules|coverage|docs)"
+        "excludePattern": "(node_modules|coverage|docs|dist)"
     },
     "plugins": [
         "plugins/markdown"
