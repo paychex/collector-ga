@@ -117,9 +117,10 @@ describe('collectors', () => {
             collector(event);
             setTimeout(() => {
                 expect(send.callCount).toBe(1);
+                collector(event);
                 setTimeout(() => {
                     expect(send.callCount).toBe(2);
-                    expect(send.args[0]).toBe(hit);
+                    expect(send.args[0]).toBe(`${hit}\n${hit}`);
                     done();
                 });
             });

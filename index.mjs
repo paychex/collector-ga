@@ -201,7 +201,6 @@ export function googleAnalytics(send, ga, SLOT_INTERVAL = 1000) {
             await send(payload.join('\n'), operation);
         } catch (e) {
             queue.unshift(...payload);
-            scheduleSend();
         } finally {
             sending.set();
         }
