@@ -2,7 +2,6 @@ const { nodeResolve } = require("@rollup/plugin-node-resolve");
 const { terser } = require("rollup-plugin-terser");
 const polyfills = require('rollup-plugin-node-polyfills');
 const commonjs = require('@rollup/plugin-commonjs');
-const replace = require('@rollup/plugin-replace');
 const { babel } = require("@rollup/plugin-babel");
 
 const pkg = require('./package.json');
@@ -54,12 +53,8 @@ module.exports = [
     // CJS
     {
         input: 'index.mjs',
-        external: ['lodash', '@paychex/core'],
+        external: ['lodash-es', '@paychex/core'],
         plugins: [
-            replace({
-                'lodash-es': 'lodash',
-                preventAssignment: true,
-            }),
             nodeResolve(),
             commonjs({
                 include: /node_modules/,
@@ -70,6 +65,9 @@ module.exports = [
             format: "cjs",
             exports: "named",
             sourcemap: true,
+            paths: {
+                'lodash-es': 'lodash'
+            }
         },
     },
 ];
