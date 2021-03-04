@@ -34,7 +34,12 @@ module.exports = [
             exports: "named",
             sourcemap: true,
             paths: {
-                'lodash-es': 'lodash'
+                'lodash-es': 'lodash',
+                '@paychex/core': '@paychex/core',
+            },
+            globals: {
+                'lodash-es': 'lodash',
+                '@paychex/core': '@paychex/core',
             }
         },
     },
@@ -72,8 +77,13 @@ module.exports = [
             format: "cjs",
             exports: "named",
             sourcemap: true,
+            globals: {
+                'lodash-es': 'lodash',
+                '@paychex/core': '@paychex/core',
+            },
             paths: {
-                'lodash-es': 'lodash'
+                'lodash-es': 'lodash',
+                '@paychex/core': '@paychex/core',
             }
         },
     },
