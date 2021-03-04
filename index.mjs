@@ -7,6 +7,9 @@
 import { get, isFunction } from 'lodash-es';
 import { signals, errors } from '@paychex/core';
 
+import '@paychex/core/types/data.mjs';
+import '@paychex/core/types/tracker.mjs';
+
 const { autoReset } = signals;
 const { error, FATAL, fatal } = errors;
 
@@ -100,7 +103,7 @@ function indexBySize(array, size) {
 }
 
 /**
- * Converts {@link external:TrackingInfo TrackingInfo} items into Google Analytics hits,
+ * Converts {@link TrackingInfo} items into Google Analytics hits,
  * then collects hits into a batch to send to GA. Enforces GA's batching logic, including:
  *
  * - maximum hit size: 8kb
@@ -108,12 +111,12 @@ function indexBySize(array, size) {
  * - max hits per batch: 20
  *
  * @function
- * @param {function} send Function to call when a batch is ready to send to Google Analytics. Will
+ * @param {function(string, DataDefinition)} send Function to call when a batch is ready to send to Google Analytics. Will
  * be invoked with the batch payload (a string where each line is a form URL-encoded GA hit) as well
- * as the DataOperation you should pass to the `@paychex/core` `createRequest` method. See the
+ * as the DataDefinition you should pass to the `@paychex/core` `createRequest` method. See the
  * examples for details.
  * @param {function} ga The Google Analytics tracker to use when sending hits.
- * @returns {function} A collection function that can be passed to `createTracker` in `@paychex/core`.
+ * @returns {function(TrackingInfo):undefined} A collection function that can be passed to `createTracker` in `@paychex/core`.
  * @example
  * import { createRequest, fetch } from '~/path/to/datalayer.js';
  *
