@@ -15,7 +15,7 @@
         "build": "rollup -c",
         "clean": "rimraf dist docs coverage",
         "preversion": "npm run clean && npm run docs && npm run build",
-        "prepublish": "c8 --reporter=html --check-coverage --branches 100 --functions 100 --lines 100 --statements 100 mocha --recursive"
+        "prepublishOnly": "c8 --reporter=html --check-coverage --branches 100 --functions 100 --lines 100 --statements 100 mocha --recursive"
     },
     "keywords": [
         "paychex",
