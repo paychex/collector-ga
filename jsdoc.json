@@ -33,7 +33,7 @@
         "search": true,
         "menu": {
             "Source Code": {
-                "href": "https://github.com/paychex/core",
+                "href": "https://github.com/paychex/collector-ga",
                 "target": "_blank",
                 "class": "menu-item",
                 "id": "repository"
