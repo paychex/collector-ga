@@ -26,27 +26,26 @@ describe('collectors', () => {
         beforeEach(() => {
             send = spy();
             hit = 'ea=action&el=label&ec=category';
-            ga = spy().invokes((method, ...args) => {
+            globalThis.ga = ga = spy().invokes((method, ...args) => {
                 if (method === 'set')
                     enqueue = args.pop();
                 else
                     enqueue({ get: () => hit });
             });
-            collector = googleAnalytics(send, ga, 10);
+            collector = googleAnalytics(send, 10);
         });
 
-        afterEach(() => collector.dispose());
+        afterEach(() => {
+            collector.dispose();
+            delete globalThis.ga;
+        });
 
         it('returns expected function', () => {
             expect(collector).toBeInstanceOf(Function);
         });
 
         it('throws if send not a function', () => {
-            expect(() => googleAnalytics(null, ga)).toThrow();
-        });
-
-        it('throws if ga is not a function', () => {
-            expect(() => googleAnalytics(send, null)).toThrow();
+            expect(() => googleAnalytics(null)).toThrow();
         });
 
         it('does nothing if disposed', (done) => {
@@ -89,11 +88,22 @@ describe('collectors', () => {
         });
 
         it('excludes non-dimension data', (done) => {
-            collector({ type: 'event', data: { key: 'value', dimension12: 'value' }});
+            collector({ type: 'event', data: { key: 'value', dimension12: 'value' } });
             setTimeout(() => {
                 expect(ga.args[1]).toEqual(expect.objectContaining({
                     hitType: 'event',
                     dimension12: 'value'
+                }));
+                done();
+            });
+        });
+
+        it('unsets dimensions', (done) => {
+            collector({ type: 'event', data: { dimension12: undefined } });
+            setTimeout(() => {
+                expect(ga.args[1]).toEqual(expect.objectContaining({
+                    hitType: 'event',
+                    dimension12: null
                 }));
                 done();
             });

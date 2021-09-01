@@ -4,7 +4,7 @@
  * @module index
  */
 
-import { get, isFunction } from 'lodash-es';
+import { get, isFunction, invoke } from 'lodash-es';
 import { signals, errors } from '@paychex/core';
 
 import '@paychex/core/types/data.mjs';
@@ -36,7 +36,7 @@ const rx = /^dimension\d+$/;
 
 function onlyDimensions(map, [key, value]) {
     if (rx.test(key))
-        map[key] = value;
+        map[key] = value == null ? null : String(value);
     return map;
 }
 
@@ -50,8 +50,8 @@ function asEvent(entry) {
     if (get(entry, 'type') === 'event')
         return withDimensions({
             hitType: 'event',
-            eventLabel: get(entry, 'label'),
-            eventAction: get(entry, 'data.action'),
+            eventAction: get(entry, 'data.action', get(entry, 'label')),
+            eventLabel: get(entry, 'data.label', get(entry, 'data.action')),
             eventCategory: get(entry, 'data.category'),
             eventValue: get(entry, 'data.value', get(entry, 'count')),
         }, entry);
@@ -115,7 +115,6 @@ function indexBySize(array, size) {
  * be invoked with the batch payload (a string where each line is a form URL-encoded GA hit) as well
  * as the DataDefinition you should pass to the `@paychex/core` `createRequest` method. See the
  * examples for details.
- * @param {function} ga The Google Analytics tracker to use when sending hits.
  * @returns {function(TrackingInfo):undefined} A collection function that can be passed to `createTracker` in `@paychex/core`.
  * @example
  * import { createRequest, fetch } from '~/path/to/datalayer.js';
@@ -160,10 +159,10 @@ function indexBySize(array, size) {
  *   }
  * }`
  */
-export function googleAnalytics(send, ga, SLOT_INTERVAL = 1000) {
+export function googleAnalytics(send, SLOT_INTERVAL = 1000) {
 
-    if (!(isFunction(send) && isFunction(ga)))
-        throw error('A `send` function and `ga` tracker instance must be provided.', fatal());
+    if (!(isFunction(send)))
+        throw error('A `send` function must be provided.', fatal());
 
     let disposed = false,
         scheduled = false,
@@ -177,7 +176,7 @@ export function googleAnalytics(send, ga, SLOT_INTERVAL = 1000) {
     const sending = autoReset(true);
     const token = setInterval(increment, SLOT_INTERVAL);
 
-    ga('set', 'sendHitTask', function enqueue(data) {
+    invoke(globalThis, 'ga', 'set', 'sendHitTask', function enqueue(data) {
         const hit = data.get('hitPayload');
         if (isValidHit(hit)) {
             queue.push(hit);
@@ -217,7 +216,7 @@ export function googleAnalytics(send, ga, SLOT_INTERVAL = 1000) {
         const hit = convertToHit(entry);
         if (!!hit) {
             slots--;
-            ga('send', hit);
+            invoke(globalThis, 'ga', 'send', hit);
         }
     }
 
