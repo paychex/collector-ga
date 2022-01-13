@@ -66,7 +66,7 @@ describe('collectors', () => {
                         path: 'batch',
                         method: 'POST',
                         protocol: 'https',
-                        base: 'www.google-analytics.com',
+                        host: 'www.google-analytics.com',
                         headers: {
                             'content-type': 'application/x-www-form-urlencoded',
                         },
