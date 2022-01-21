@@ -6,6 +6,22 @@ const { babel } = require("@rollup/plugin-babel");
 
 const pkg = require('./package.json');
 const external = ['lodash-es', '@paychex/core'];
+const output = {
+    format: "umd",
+    name: pkg.name,
+    esModule: false,
+    exports: "named",
+    sourcemap: true,
+    banner: `/*! ${pkg.name} v${pkg.version} */`,
+    paths: {
+        'lodash-es': 'lodash',
+        '@paychex/core': '@paychex/core',
+    },
+    globals: {
+        'lodash-es': '_',
+        '@paychex/core': '@paychex/core',
+    }
+};
 
 module.exports = [
     {
@@ -24,25 +40,15 @@ module.exports = [
                 babelHelpers: "bundled",
             }),
             polyfills(),
-            terser(),
         ],
-        output: {
+        output: [{
+            ...output,
+            file: `dist/paychex.collector-ga.js`,
+        }, {
+            ...output,
+            plugins: [terser()],
             file: `dist/paychex.collector-ga.min.js`,
-            format: "umd",
-            name: pkg.name,
-            esModule: false,
-            exports: "named",
-            sourcemap: true,
-            banner: `/*! ${pkg.name} v${pkg.version} */`,
-            paths: {
-                'lodash-es': 'lodash',
-                '@paychex/core': '@paychex/core',
-            },
-            globals: {
-                'lodash-es': '_',
-                '@paychex/core': '@paychex/core',
-            }
-        },
+        }],
     },
     // ESM
     {
