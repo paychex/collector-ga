@@ -1,0 +1,11 @@
+{
+    "extension": [
+        "ts"
+    ],
+    "spec": [
+        "spec/**/*.ts"
+    ],
+    "require": [
+        "./spec/compiler.js"
+    ]
+}

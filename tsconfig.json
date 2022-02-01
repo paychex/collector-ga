@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+        "module": "esnext",
+        "noImplicitAny": true,
+        "target": "es5",
+        "moduleResolution": "node",
+        "allowSyntheticDefaultImports": true,
+        "skipLibCheck": true
+    },
+    "include": [
+        "**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "coverage",
+        "dist",
+        "docs",
+        "spec",
+        "types"
+    ],
+    "typedocOptions": {
+        "entryPoints": [
+            "./index.ts"
+        ],
+        "out": "docs",
+        "hideGenerator": true
+    }
+}
