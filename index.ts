@@ -130,6 +130,14 @@ function indexBySize(array: Hit[], size: number): number {
     return i;
 }
 
+/** Represents a {@link TrackingSubscriber} extended with useful functionality. */
+export interface GoogleTrackingSubscriber extends TrackingSubscriber {
+
+    /** Called to stop the subscriber permanently from sending data to Google. */
+    dispose: VoidFunction
+
+}
+
 /**
  * Converts {@link TrackingInfo} items into Google Analytics hits,
  * then collects hits into a batch to send to GA. Enforces GA's batching logic, including:
@@ -192,7 +200,7 @@ function indexBySize(array: Hit[], size: number): number {
  * }
  * ```
  */
-export function googleAnalytics(send: SendFunction): TrackingSubscriber {
+export function googleAnalytics(send: SendFunction): GoogleTrackingSubscriber {
 
     if (!(isFunction(send)))
         throw error('A `send` function must be provided.', fatal());
@@ -255,16 +263,11 @@ export function googleAnalytics(send: SendFunction): TrackingSubscriber {
         }
     }
 
-    // for unit testing only
-    Object.defineProperty(collect, 'dispose', {
-        enumerable: false,
-        configurable: false,
-        value: function dispose() {
+    return Object.assign(collect, {
+        dispose() {
             disposed = true;
             clearInterval(token);
         }
     });
-
-    return collect;
 
 }
