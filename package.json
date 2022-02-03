@@ -5,6 +5,7 @@
     "main": "dist/cjs/index.js",
     "module": "dist/esm/index.mjs",
     "browser": "dist/umd/paychex.collector-ga.js",
+    "types": "types/index.d.ts",
     "files": [
         "dist",
         "docs",
