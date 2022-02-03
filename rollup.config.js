@@ -1,3 +1,5 @@
+const path = require('path');
+
 const { nodeResolve } = require("@rollup/plugin-node-resolve");
 const { terser } = require("rollup-plugin-terser");
 const polyfills = require('rollup-plugin-node-polyfills');
@@ -16,6 +18,25 @@ const output = {
     banner: `/*! ${pkg.name} v${pkg.version} */`,
     globals: {
         'lodash': '_',
+        '@paychex/core': '@paychex/core',
+    }
+};
+
+const output = {
+    format: "umd",
+    name: pkg.name,
+    esModule: false,
+    exports: "named",
+    sourcemap: true,
+    sourcemapPathTransform: (relativeSourcePath, sourcemapPath) => {
+        return `${pkg.name}/${path.relative(path.resolve('.'), path.resolve(path.dirname(sourcemapPath), relativeSourcePath))}`;
+    },
+    paths: {
+        'lodash-es': 'lodash',
+        '@paychex/core': '@paychex/core',
+    },
+    globals: {
+        'lodash-es': '_',
         '@paychex/core': '@paychex/core',
     }
 };
