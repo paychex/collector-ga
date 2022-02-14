@@ -19,25 +19,12 @@ const output = {
     globals: {
         'lodash': '_',
         '@paychex/core': '@paychex/core',
-    }
-};
-
-const output = {
-    format: "umd",
-    name: pkg.name,
-    esModule: false,
-    exports: "named",
-    sourcemap: true,
-    sourcemapPathTransform: (relativeSourcePath, sourcemapPath) => {
-        return `${pkg.name}/${path.relative(path.resolve('.'), path.resolve(path.dirname(sourcemapPath), relativeSourcePath))}`;
     },
     paths: {
-        'lodash-es': 'lodash',
         '@paychex/core': '@paychex/core',
     },
-    globals: {
-        'lodash-es': '_',
-        '@paychex/core': '@paychex/core',
+    sourcemapPathTransform: (relativeSourcePath, sourcemapPath) => {
+        return `${pkg.name}/${path.relative(path.resolve('.'), path.resolve(path.dirname(sourcemapPath), relativeSourcePath))}`;
     }
 };
 
